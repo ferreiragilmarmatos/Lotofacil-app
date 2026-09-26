@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#10251d">
+  <title>Lotofácil — Resultados</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; padding: 20px; background: #f3f6f4; color: #17231c;
+      font: 16px system-ui, sans-serif;
+    }
+    main { max-width: 700px; margin: auto; }
+    header, section, .ad {
+      background: white; border-radius: 16px; padding: 18px;
+      margin-bottom: 16px; box-shadow: 0 2px 10px #10251d12;
+    }
+    h1 { margin: 0 0 6px; font-size: 25px; }
+    .muted { color: #637067; font-size: 14px; }
+    button {
+      border: 0; border-radius: 10px; padding: 13px 16px;
+      background: #147a45; color: white; font-size: 16px; font-weight: 700;
+      cursor: pointer; margin: 8px 6px 0 0;
+    }
+    button.secondary { background: #26372e; }
+    #status { min-height: 22px; margin-top: 12px; }
+    .result { border-top: 1px solid #e5ebe6; padding: 14px 0; }
+    .balls { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 10px; }
+    .ball {
+      width: 38px; height: 38px; display: grid; place-items: center;
+      border-radius: 50%; background: #e6f4eb; color: #12683b; font-weight: 800;
+    }
+    .ad { border: 1px dashed #aab7ae; text-align: center; color: #637067; }
+    footer { color: #637067; font-size: 12px; text-align: center; padding: 8px; }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>🍀 Lotofácil</h1>
+    <div class="muted">Resultados e histórico salvos neste aparelho</div>
+    <button id="sync">Atualizar resultado</button>
+    <button id="download" class="secondary">Baixar CSV</button>
+    <div id="status" class="muted">Abrindo o app…</div>
+  </header>
+
+  <section>
+    <h2>Resultados salvos</h2>
+    <div id="results" class="muted">Ainda não há resultados salvos.</div>
+  </section>
+
+  <div class="ad">
+    <strong>Espaço para anúncios</strong><br>
+    <small>A monetização será ativada após configurar uma plataforma de anúncios e obter aprovação.</small>
+  </div>
+
+  <footer>
+    Aplicativo independente para consulta. Confira os resultados também nos canais oficiais da CAIXA.
+  </footer>
+</main>
+
+<script>
+  const API = "https://servicebus2.caixa.gov.br/portaldeloterias/api/lotofacil";
+  const STORAGE_KEY = "lotofacil_resultados_v1";
+  const statusEl = document.getElementById("status");
+  const resultsEl = document.getElementById("results");
+
+  function loadResults() {
+    try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]"); }
+    catch { return []; }
+  }
+
+  function showResults() {
+    const list = loadResults().sort((a, b) => b.concurso - a.concurso);
+    if (!list.length) {
+      resultsEl.textContent = "Ainda não há resultados salvos.";
+      return;
+    }
+
+    resultsEl.innerHTML = list.map(item => `
+      <article class="result">
+        <strong>Concurso ${item.concurso}</strong>
+        <span class="muted"> — ${item.data || ""}</span>
+        <div class="balls">
+          ${item.dezenas.map(n => `<span class="ball">${n}</span>`).join("")}
+        </div>
+      </article>
+    `).join("");
+  }
+
+  async function syncLatest() {
+    statusEl.textContent = "Consultando o resultado mais recente…";
+    try {
+      const response = await fetch(API, {
+        cache: "no-store",
+        headers: { "Accept": "application/json" }
+      });
+      if (!response.ok) throw new Error("A CAIXA não respondeu agora.");
+      const data = await response.json();
+
+      const concurso = Number(data.numero);
+      const dezenas = data.listaDezenas;
+      if (!concurso || !Array.isArray(dezenas) || dezenas.length !== 15) {
+        throw new Error("A resposta recebida não parece ser um resultado válido.");
+      }
+
+      const list = loadResults();
+      const updated = [
+        { concurso, data: data.dataApuracao || "", dezenas },
+        ...list.filter(item => item.concurso !== concurso)
+      ].sort((a, b) => b.concurso - a.concurso);
+
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+      showResults();
+      statusEl.textContent = `Atualizado: concurso ${concurso}. Os dados ficam salvos neste aparelho.`;
+    } catch (error) {
+      statusEl.textContent =
+        "Não foi possível atualizar agora. " + error.message +
+        " Os resultados já salvos continuam disponíveis.";
+    }
+  }
+
+  function downloadCSV() {
+    const list = loadResults().sort((a, b) => a.concurso - b.concurso);
+    if (!list.length) {
+      statusEl.textContent = "Ainda não há resultados para baixar.";
+      return;
+    }
+
+    const rows = [
+      ["concurso", "data", "dezenas"].join(";"),
+      ...list.map(item =>
+        [item.concurso, item.data, item.dezenas.join(" ")].join(";")
+      )
+    ];
+    const blob = new Blob(["\uFEFF" + rows.join("\n")], {
+      type: "text/csv;charset=utf-8"
+    });
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = "resultados-lotofacil.csv";
+    link.click();
+    URL.revokeObjectURL(link.href);
+  }
+
+  document.getElementById("sync").addEventListener("click", syncLatest);
+  document.getElementById("download").addEventListener("click", downloadCSV);
+
+  showResults();
+  syncLatest();
+</script>
+</body>
+</html>
