@@ -3,152 +3,194 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#10251d">
+  <meta name="theme-color" content="#14532d">
   <title>Lotofácil — Resultados</title>
   <style>
     * { box-sizing: border-box; }
     body {
-      margin: 0; padding: 20px; background: #f3f6f4; color: #17231c;
-      font: 16px system-ui, sans-serif;
+      margin: 0; padding: 18px; background: #f3f4f6;
+      color: #17202a; font: 16px system-ui, sans-serif;
     }
     main { max-width: 700px; margin: auto; }
     header, section, .ad {
-      background: white; border-radius: 16px; padding: 18px;
-      margin-bottom: 16px; box-shadow: 0 2px 10px #10251d12;
+      background: white; border-radius: 14px; padding: 18px;
+      margin: 0 0 16px; box-shadow: 0 2px 10px #00000012;
     }
     h1 { margin: 0 0 6px; font-size: 25px; }
-    .muted { color: #637067; font-size: 14px; }
+    h2 { font-size: 19px; margin-top: 0; }
+    .muted { color: #64748b; font-size: 14px; }
+    button, input {
+      width: 100%; padding: 13px; margin: 6px 0;
+      border-radius: 9px; font: inherit;
+    }
     button {
-      border: 0; border-radius: 10px; padding: 13px 16px;
-      background: #147a45; color: white; font-size: 16px; font-weight: 700;
-      cursor: pointer; margin: 8px 6px 0 0;
+      border: 0; background: #166534; color: white;
+      font-weight: 700; cursor: pointer;
     }
-    button.secondary { background: #26372e; }
-    #status { min-height: 22px; margin-top: 12px; }
-    .result { border-top: 1px solid #e5ebe6; padding: 14px 0; }
-    .balls { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 10px; }
+    button.secondary { background: #334155; }
+    input { border: 1px solid #cbd5e1; background: white; }
+    .numbers { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0; }
     .ball {
-      width: 38px; height: 38px; display: grid; place-items: center;
-      border-radius: 50%; background: #e6f4eb; color: #12683b; font-weight: 800;
+      width: 40px; height: 40px; display: grid; place-items: center;
+      border-radius: 50%; color: white; background: #15803d;
+      font-weight: 700;
     }
-    .ad { border: 1px dashed #aab7ae; text-align: center; color: #637067; }
-    footer { color: #637067; font-size: 12px; text-align: center; padding: 8px; }
+    #status { min-height: 24px; }
+    .result { border-top: 1px solid #e2e8f0; padding: 12px 0; }
+    .ad {
+      min-height: 85px; display: grid; place-items: center;
+      border: 1px dashed #94a3b8; color: #64748b;
+      box-shadow: none;
+    }
   </style>
 </head>
 <body>
 <main>
   <header>
-    <h1>🍀 Lotofácil</h1>
-    <div class="muted">Resultados e histórico salvos neste aparelho</div>
-    <button id="sync">Atualizar resultado</button>
-    <button id="download" class="secondary">Baixar CSV</button>
-    <div id="status" class="muted">Abrindo o app…</div>
+    <h1>Lotofácil — Resultados</h1>
+    <div class="muted">Resultados consultados na fonte da CAIXA.</div>
   </header>
 
   <section>
-    <h2>Resultados salvos</h2>
-    <div id="results" class="muted">Ainda não há resultados salvos.</div>
+    <h2>Resultado mais recente</h2>
+    <div id="status" class="muted">Consultando...</div>
+    <div id="latest"></div>
+    <button onclick="atualizar()">Atualizar resultado</button>
   </section>
 
-  <div class="ad">
-    <strong>Espaço para anúncios</strong><br>
-    <small>A monetização será ativada após configurar uma plataforma de anúncios e obter aprovação.</small>
-  </div>
+  <section>
+    <h2>Consultar um concurso</h2>
+    <input id="contestNumber" type="number" min="1" placeholder="Digite o número do concurso">
+    <button class="secondary" onclick="consultarConcurso()">Consultar e salvar</button>
+  </section>
 
-  <footer>
-    Aplicativo independente para consulta. Confira os resultados também nos canais oficiais da CAIXA.
-  </footer>
+  <section>
+    <h2>Histórico salvo neste celular</h2>
+    <div id="count" class="muted"></div>
+    <button onclick="baixarCSV()">Baixar histórico em CSV</button>
+    <div id="history"></div>
+  </section>
+
+  <div class="ad">Espaço reservado para anúncios</div>
+  <p class="muted">Os sorteios são aleatórios. Este app não prevê resultados nem realiza apostas.</p>
 </main>
 
 <script>
   const API = "https://servicebus2.caixa.gov.br/portaldeloterias/api/lotofacil";
-  const STORAGE_KEY = "lotofacil_resultados_v1";
-  const statusEl = document.getElementById("status");
-  const resultsEl = document.getElementById("results");
+  const STORAGE_KEY = "lotofacil-resultados-v1";
 
-  function loadResults() {
+  function lerHistorico() {
     try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]"); }
     catch { return []; }
   }
 
-  function showResults() {
-    const list = loadResults().sort((a, b) => b.concurso - a.concurso);
-    if (!list.length) {
-      resultsEl.textContent = "Ainda não há resultados salvos.";
-      return;
-    }
-
-    resultsEl.innerHTML = list.map(item => `
-      <article class="result">
-        <strong>Concurso ${item.concurso}</strong>
-        <span class="muted"> — ${item.data || ""}</span>
-        <div class="balls">
-          ${item.dezenas.map(n => `<span class="ball">${n}</span>`).join("")}
-        </div>
-      </article>
-    `).join("");
+  function salvar(resultado) {
+    const historico = lerHistorico();
+    const atualizado = historico.filter(item => item.numero !== resultado.numero);
+    atualizado.push(resultado);
+    atualizado.sort((a, b) => b.numero - a.numero);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(atualizado));
+    mostrarHistorico();
   }
 
-  async function syncLatest() {
-    statusEl.textContent = "Consultando o resultado mais recente…";
+  function formatarResultado(dados) {
+    return {
+      numero: Number(dados.numero),
+      data: dados.dataApuracao || "",
+      dezenas: (dados.listaDezenas || []).map(n => String(n).padStart(2, "0"))
+    };
+  }
+
+  function mostrarResultado(resultado) {
+    const bolas = resultado.dezenas
+      .map(n => `<span class="ball">${n}</span>`).join("");
+    document.getElementById("latest").innerHTML =
+      `<strong>Concurso ${resultado.numero}</strong> — ${resultado.data}
+       <div class="numbers">${bolas}</div>`;
+  }
+
+  async function buscar(url) {
+    const resposta = await fetch(url);
+    if (!resposta.ok) throw new Error("A CAIXA não respondeu à consulta.");
+    return formatarResultado(await resposta.json());
+  }
+
+  async function atualizar() {
+    const status = document.getElementById("status");
+    status.textContent = "Buscando resultado na CAIXA...";
     try {
-      const response = await fetch(API, {
-        cache: "no-store",
-        headers: { "Accept": "application/json" }
-      });
-      if (!response.ok) throw new Error("A CAIXA não respondeu agora.");
-      const data = await response.json();
-
-      const concurso = Number(data.numero);
-      const dezenas = data.listaDezenas;
-      if (!concurso || !Array.isArray(dezenas) || dezenas.length !== 15) {
-        throw new Error("A resposta recebida não parece ser um resultado válido.");
-      }
-
-      const list = loadResults();
-      const updated = [
-        { concurso, data: data.dataApuracao || "", dezenas },
-        ...list.filter(item => item.concurso !== concurso)
-      ].sort((a, b) => b.concurso - a.concurso);
-
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
-      showResults();
-      statusEl.textContent = `Atualizado: concurso ${concurso}. Os dados ficam salvos neste aparelho.`;
-    } catch (error) {
-      statusEl.textContent =
-        "Não foi possível atualizar agora. " + error.message +
-        " Os resultados já salvos continuam disponíveis.";
+      const resultado = await buscar(API);
+      salvar(resultado);
+      mostrarResultado(resultado);
+      status.textContent = "Resultado atualizado.";
+      localStorage.setItem("lotofacil-ultima-atualizacao", new Date().toISOString());
+    } catch (erro) {
+      status.textContent =
+        "Não foi possível consultar automaticamente. Pode ser uma instabilidade ou bloqueio do navegador. Tente novamente mais tarde.";
+      const historico = lerHistorico();
+      if (historico.length) mostrarResultado(historico[0]);
     }
   }
 
-  function downloadCSV() {
-    const list = loadResults().sort((a, b) => a.concurso - b.concurso);
-    if (!list.length) {
-      statusEl.textContent = "Ainda não há resultados para baixar.";
+  async function consultarConcurso() {
+    const numero = document.getElementById("contestNumber").value;
+    if (!numero || Number(numero) < 1) {
+      alert("Digite um número de concurso válido.");
       return;
     }
+    try {
+      const resultado = await buscar(`${API}/${encodeURIComponent(numero)}`);
+      salvar(resultado);
+      mostrarResultado(resultado);
+      document.getElementById("status").textContent = "Concurso consultado e salvo.";
+    } catch {
+      alert("Não consegui consultar esse concurso. Confira o número e tente novamente.");
+    }
+  }
 
-    const rows = [
-      ["concurso", "data", "dezenas"].join(";"),
-      ...list.map(item =>
-        [item.concurso, item.data, item.dezenas.join(" ")].join(";")
-      )
-    ];
-    const blob = new Blob(["\uFEFF" + rows.join("\n")], {
-      type: "text/csv;charset=utf-8"
-    });
+  function mostrarHistorico() {
+    const historico = lerHistorico();
+    document.getElementById("count").textContent =
+      `${historico.length} concurso(s) salvo(s) neste celular.`;
+    document.getElementById("history").innerHTML = historico.slice(0, 10).map(item =>
+      `<div class="result"><strong>Concurso ${item.numero}</strong> — ${item.data}
+       <div>${item.dezenas.join(" · ")}</div></div>`
+    ).join("");
+  }
+
+  function baixarCSV() {
+    const historico = lerHistorico();
+    if (!historico.length) {
+      alert("Ainda não há resultados salvos para baixar.");
+      return;
+    }
+    const cabecalho = ["Concurso", "Data", ...Array.from({length: 15}, (_, i) => `Dezena${i + 1}`)];
+    const linhas = historico.map(item => [
+      item.numero, item.data, ...item.dezenas
+    ]);
+    const csv = [cabecalho, ...linhas]
+      .map(linha => linha.map(celula => `"${String(celula).replaceAll('"', '""')}"`).join(";"))
+      .join("\n");
+    const arquivo = new Blob(["\uFEFF" + csv], {type: "text/csv;charset=utf-8"});
     const link = document.createElement("a");
-    link.href = URL.createObjectURL(blob);
-    link.download = "resultados-lotofacil.csv";
+    link.href = URL.createObjectURL(arquivo);
+    link.download = "historico-lotofacil.csv";
     link.click();
     URL.revokeObjectURL(link.href);
   }
 
-  document.getElementById("sync").addEventListener("click", syncLatest);
-  document.getElementById("download").addEventListener("click", downloadCSV);
+  mostrarHistorico();
+  const salvo = lerHistorico();
+  if (salvo.length) mostrarResultado(salvo[0]);
 
-  showResults();
-  syncLatest();
+  // Atualiza automaticamente ao abrir, no máximo uma vez por dia.
+  const ultima = localStorage.getItem("lotofacil-ultima-atualizacao");
+  if (!ultima || Date.now() - new Date(ultima).getTime() > 24 * 60 * 60 * 1000) {
+    atualizar();
+  } else {
+    document.getElementById("status").textContent =
+      "Resultado salvo. Toque em “Atualizar resultado” para consultar novamente.";
+  }
 </script>
 </body>
 </html>
